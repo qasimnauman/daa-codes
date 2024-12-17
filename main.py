@@ -1,6 +1,7 @@
 import pandas as pd
 import time
 from itertools import product
+from multiprocessing import Pool
 
 # Function to compute LCS length using dynamic programming
 def lcs_length(seq1, seq2):
@@ -16,49 +17,71 @@ def lcs_length(seq1, seq2):
 
     return dp[m][n]
 
-# Read the dataset
-def load_data(file_path):
-    df = pd.read_csv(file_path, header=None)  # No header in file
-    sequences = df.iloc[:, 1].tolist()  # Load the first column as sequences
-    return sequences
+# Function to read and load sequences from a CSV file
+def load_data(file_path, column_index=1):
+    """Loads sequences from a CSV file."""
+    try:
+        df = pd.read_csv(file_path, header=None)
+        sequences = df.iloc[:, column_index].tolist()
+        return sequences
+    except Exception as e:
+        print(f"Error reading file: {e}")
+        exit(1)
 
-# Compute combined table with LCS and Time
-def compute_combined_table(sequences):
+# Compute LCS for a pair of sequences
+def compute_lcs_pair(args):
+    i, j, seq1, seq2 = args
+    print(f"Computing LCS for Sequence {i+1} and Sequence {j+1}...")
+    start_time = time.time()
+    lcs_value = lcs_length(seq1, seq2)
+    elapsed_time = round(time.time() - start_time, 5)
+    return [f"Seq{i+1}", f"Seq{j+1}", lcs_value, elapsed_time]
+
+# Compute the combined LCS table using multiprocessing
+def compute_combined_table_multiprocessing(sequences, num_workers):
+    """Computes LCS for all sequence pairs using multiprocessing."""
+    tasks = [(i, j, sequences[i], sequences[j]) for i, j in product(range(len(sequences)), repeat=2)]
     combined_data = []
-    n = len(sequences)
+    total_tasks = len(tasks)
 
-    for i, j in product(range(n), repeat=2):
-        start_time = time.time()
-        lcs_value = lcs_length(sequences[i], sequences[j])
-        end_time = time.time()
-        computation_time = end_time - start_time
-        combined_data.append([f"Seq{i+1}", f"Seq{j+1}", lcs_value, round(computation_time, 5)])
+    with Pool(processes=num_workers) as pool:
+        for idx, result in enumerate(pool.imap_unordered(compute_lcs_pair, tasks)):
+            combined_data.append(result)
+            if idx % (total_tasks // 10) == 0:  # Log every 10% of progress
+                print(f"Progress: {round((idx / total_tasks) * 100, 2)}%")
 
     return combined_data
 
-# Save results to a single CSV file
-def save_combined_results_to_csv(combined_data, output_file):
-    df = pd.DataFrame(combined_data, columns=["Sequence 1", "Sequence 2", "LCS Value", "Time (s)"])
-    df.to_csv(output_file, index=False)
+# Save results to a CSV file
+def save_results_to_csv(data, output_file):
+    """Saves LCS results to a CSV file."""
+    df = pd.DataFrame(data, columns=["Sequence 1", "Sequence 2", "LCS Value", "Time (s)"])
+    try:
+        df.to_csv(output_file, index=False)
+    except Exception as e:
+        print(f"Error saving results: {e}")
+        exit(1)
 
-# Driver Code
-if __name__ == "__main__":
-    input_file = "Assignment_LCS_Data.csv"  # Replace with actual file path
-    output_file = "combined_lcs_time_table.csv"
-
-    total_start_time = time.time()  # Start logging total execution time
-
+# Driver function to execute the pipeline
+def main(input_file, output_file, num_workers=8):
     print("Loading data...")
     sequences = load_data(input_file)
 
-    print("Computing combined table...")
-    combined_data = compute_combined_table(sequences)
+    print("Computing LCS table using multiprocessing...")
+    total_start_time = time.time()
+
+    combined_data = compute_combined_table_multiprocessing(sequences, num_workers)
 
     print("Saving results to CSV...")
-    save_combined_results_to_csv(combined_data, output_file)
+    save_results_to_csv(combined_data, output_file)
 
-    total_end_time = time.time()  # End logging total execution time
-
-    total_time = round(total_end_time - total_start_time, 2)  # Total execution time in seconds
-    print(f"Results saved successfully to {output_file}!")
+    total_time = round(time.time() - total_start_time, 2)
+    print(f"Results successfully saved to '{output_file}'.")
     print(f"Total Execution Time: {total_time} seconds")
+
+if __name__ == "__main__":
+    INPUT_FILE = "Assignment_LCS_Data.csv"  # Replace with actual file path
+    OUTPUT_FILE = "combined_lcs_time_table.csv"
+    NUM_WORKERS = 16  # Adjust based on CPU availability
+
+    main(INPUT_FILE, OUTPUT_FILE, NUM_WORKERS)
